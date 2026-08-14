@@ -3,15 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-
-// Load FPDF first
-$fpdfPath = base_path('vendor/setasign/fpdi/fpdf.php');
-
-if (file_exists($fpdfPath)) {
-    require_once $fpdfPath;
-}
-
 use setasign\Fpdi\Fpdi;
+
+require_once app_path('Libraries/FPDF/fpdf.php');
 
 class MergePdfController extends Controller
 {
