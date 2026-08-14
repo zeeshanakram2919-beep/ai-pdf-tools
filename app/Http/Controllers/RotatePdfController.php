@@ -3,280 +3,201 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-
-/*
-|--------------------------------------------------------------------------
-| Load FPDF manually
-|--------------------------------------------------------------------------
-*/
-
-require_once base_path('vendor/setasign/fpdi/fpdf.php');
-
 use setasign\Fpdi\Fpdi;
+
+// Load the working FPDF library from the application
+require_once app_path('Libraries/FPDF/fpdf.php');
 
 class RotatePdfController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Show Rotate PDF Page
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Show Rotate PDF page
+     */
     public function index()
     {
         return view('rotate-pdf');
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Rotate PDF
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Rotate PDF
+     */
     public function rotate(Request $request)
     {
-        /*
-        |--------------------------------------------------------------------------
-        | Validation
-        |--------------------------------------------------------------------------
-        */
-
         $request->validate([
             'pdf' => 'required|file|mimes:pdf|max:20480',
             'angle' => 'required|integer|in:90,180,270',
         ]);
 
-
         $outputPath = null;
 
-
         try {
-
-            /*
-            |--------------------------------------------------------------------------
-            | Uploaded PDF
-            |--------------------------------------------------------------------------
-            */
-
+            // Get uploaded PDF
             $file = $request->file('pdf');
+
+            if (!$file || !$file->isValid()) {
+                return back()->withErrors([
+                    'pdf' => 'Please upload a valid PDF file.'
+                ]);
+            }
 
             $inputPath = $file->getRealPath();
 
-
             if (!$inputPath || !file_exists($inputPath)) {
-
                 throw new \Exception(
                     'Uploaded PDF could not be found.'
                 );
             }
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Rotation Angle
-            |--------------------------------------------------------------------------
-            */
-
+            // Rotation angle
             $angle = (int) $request->input('angle');
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Create FPDI
-            |--------------------------------------------------------------------------
-            */
-
+            // Create FPDI
             $pdf = new Fpdi();
 
             $pdf->SetAutoPageBreak(false);
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Load Source PDF
-            |--------------------------------------------------------------------------
-            */
-
+            // Load source PDF
             $pageCount = $pdf->setSourceFile($inputPath);
 
-
             if ($pageCount < 1) {
-
                 throw new \Exception(
                     'The uploaded PDF does not contain any pages.'
                 );
             }
 
+            // Process every page
+            for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
 
-            /*
-            |--------------------------------------------------------------------------
-            | Process Every Page
-            |--------------------------------------------------------------------------
-            */
+                // Import page
+                $templateId = $pdf->importPage($pageNumber);
 
-            for (
-                $pageNumber = 1;
-                $pageNumber <= $pageCount;
-                $pageNumber++
-            ) {
+                // Get page size
+                $size = $pdf->getTemplateSize($templateId);
 
-                /*
-                |--------------------------------------------------------------------------
-                | Import Original Page
-                |--------------------------------------------------------------------------
-                */
-
-                $templateId =
-                    $pdf->importPage($pageNumber);
-
+                $width = (float) $size['width'];
+                $height = (float) $size['height'];
 
                 /*
-                |--------------------------------------------------------------------------
-                | Get Original Page Size
-                |--------------------------------------------------------------------------
-                */
+                 * When rotating 90 or 270 degrees,
+                 * swap the page dimensions so the
+                 * complete PDF page remains visible.
+                 */
+                if ($angle === 90 || $angle === 270) {
+                    $pageWidth = $height;
+                    $pageHeight = $width;
+                } else {
+                    $pageWidth = $width;
+                    $pageHeight = $height;
+                }
 
-                $size =
-                    $pdf->getTemplateSize($templateId);
+                // Determine orientation
+                $orientation = $pageWidth > $pageHeight
+                    ? 'L'
+                    : 'P';
 
-
-                $width =
-                    (float) $size['width'];
-
-                $height =
-                    (float) $size['height'];
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Determine Orientation
-                |--------------------------------------------------------------------------
-                */
-
-                $orientation =
-                    $width > $height
-                        ? 'L'
-                        : 'P';
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | IMPORTANT
-                |--------------------------------------------------------------------------
-                |
-                | FPDF supports page rotation directly.
-                |
-                | This rotates the PDF page itself instead of
-                | rotating the template inside a new page.
-                |
-                | Therefore the original content is NOT cut.
-                |
-                |--------------------------------------------------------------------------
-                */
-
+                // Add new page
                 $pdf->AddPage(
                     $orientation,
-                    [$width, $height],
-                    $angle
+                    [$pageWidth, $pageHeight]
                 );
-
 
                 /*
-                |--------------------------------------------------------------------------
-                | Place Original Page
-                |--------------------------------------------------------------------------
-                */
+                 * Rotate the imported page.
+                 *
+                 * FPDF/FPDI uses transformation methods
+                 * provided by the installed FPDF library.
+                 */
 
-                $pdf->useTemplate(
-                    $templateId,
-                    0,
-                    0,
-                    $width,
-                    $height
-                );
+                if ($angle === 90) {
+
+                    $pdf->Rotate(90, $pageWidth, 0);
+
+                    $pdf->useTemplate(
+                        $templateId,
+                        0,
+                        -$width,
+                        $width,
+                        $height
+                    );
+
+                    $pdf->Rotate(0);
+
+                } elseif ($angle === 180) {
+
+                    $pdf->Rotate(
+                        180,
+                        $pageWidth / 2,
+                        $pageHeight / 2
+                    );
+
+                    $pdf->useTemplate(
+                        $templateId,
+                        0,
+                        0,
+                        $width,
+                        $height
+                    );
+
+                    $pdf->Rotate(0);
+
+                } elseif ($angle === 270) {
+
+                    $pdf->Rotate(
+                        270,
+                        0,
+                        $pageHeight
+                    );
+
+                    $pdf->useTemplate(
+                        $templateId,
+                        -$height,
+                        0,
+                        $width,
+                        $height
+                    );
+
+                    $pdf->Rotate(0);
+                }
             }
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Output File Name
-            |--------------------------------------------------------------------------
-            */
-
+            // Unique output filename
             $fileName =
                 'rotated-pdf-' .
                 date('Ymd-His') .
+                '-' .
+                uniqid() .
                 '.pdf';
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Storage Directory
-            |--------------------------------------------------------------------------
-            */
-
-            $storagePath =
-                storage_path('app');
-
+            // Storage directory
+            $storagePath = storage_path('app');
 
             if (!is_dir($storagePath)) {
-
-                mkdir(
-                    $storagePath,
-                    0777,
-                    true
-                );
+                mkdir($storagePath, 0777, true);
             }
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Output Path
-            |--------------------------------------------------------------------------
-            */
-
+            // Final output path
             $outputPath =
                 $storagePath .
                 DIRECTORY_SEPARATOR .
                 $fileName;
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Create PDF
-            |--------------------------------------------------------------------------
-            */
-
+            // Generate PDF
             $pdf->Output(
                 $outputPath,
                 'F'
             );
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Verify Output
-            |--------------------------------------------------------------------------
-            */
-
+            // Verify file
             if (
                 !file_exists($outputPath) ||
                 filesize($outputPath) <= 0
             ) {
-
                 throw new \Exception(
                     'Rotated PDF could not be created.'
                 );
             }
 
-
-            /*
-            |--------------------------------------------------------------------------
-            | Download
-            |--------------------------------------------------------------------------
-            */
-
+            // Download
             return response()
                 ->download(
                     $outputPath,
@@ -284,29 +205,15 @@ class RotatePdfController extends Controller
                 )
                 ->deleteFileAfterSend(true);
 
-
         } catch (\Throwable $e) {
 
-            /*
-            |--------------------------------------------------------------------------
-            | Cleanup
-            |--------------------------------------------------------------------------
-            */
-
+            // Cleanup failed output
             if (
                 $outputPath &&
                 file_exists($outputPath)
             ) {
-
                 @unlink($outputPath);
             }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Show Error
-            |--------------------------------------------------------------------------
-            */
 
             return back()->withErrors([
                 'pdf' =>
