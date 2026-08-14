@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use setasign\Fpdi\Fpdi;
 
-// Load FPDF manually
-require_once base_path('vendor/setasign/fpdi/fpdf.php');
+// Load our working FPDF manually
+require_once app_path('Libraries/FPDF/fpdf.php');
 
 class SplitPdfController extends Controller
 {
@@ -23,8 +23,7 @@ class SplitPdfController extends Controller
         ]);
 
         try {
-
-            // Create FPDI
+            // Create FPDI PDF object
             $pdf = new Fpdi();
 
             // Uploaded PDF
@@ -33,9 +32,10 @@ class SplitPdfController extends Controller
             // Load source PDF
             $pageCount = $pdf->setSourceFile($file->getRealPath());
 
-            // Check requested page exists
+            // Requested page
             $pageNumber = (int) $request->page;
 
+            // Check requested page exists
             if ($pageNumber > $pageCount) {
                 return back()->withErrors([
                     'page' => "This PDF has only {$pageCount} pages."
@@ -48,12 +48,12 @@ class SplitPdfController extends Controller
             // Get original page size
             $size = $pdf->getTemplateSize($templateId);
 
-            // Determine page orientation
+            // Determine orientation
             $orientation = $size['width'] > $size['height']
                 ? 'L'
                 : 'P';
 
-            // Add page with original PDF dimensions
+            // Add page with original dimensions
             $pdf->AddPage(
                 $orientation,
                 [
@@ -65,37 +65,36 @@ class SplitPdfController extends Controller
             // Place imported page
             $pdf->useTemplate($templateId);
 
-            // Create unique file name
+            // Create unique filename
             $fileName = 'split-page-' . time() . '.pdf';
 
             // Storage directory
             $storagePath = storage_path('app');
 
-            // Make sure storage directory exists
+            // Create storage directory if needed
             if (!is_dir($storagePath)) {
                 mkdir($storagePath, 0777, true);
             }
 
-            // Final file path
+            // Full file path
             $filePath = $storagePath . DIRECTORY_SEPARATOR . $fileName;
 
             // Save PDF
             $pdf->Output($filePath, 'F');
 
-            // Check file was created
+            // Verify file
             if (!file_exists($filePath)) {
                 return back()->withErrors([
                     'pdf' => 'Split PDF could not be created.'
                 ]);
             }
 
-            // Download PDF
+            // Download and delete after sending
             return response()
                 ->download($filePath, $fileName)
                 ->deleteFileAfterSend(true);
 
         } catch (\Throwable $e) {
-
             return back()->withErrors([
                 'pdf' => 'PDF split failed: ' . $e->getMessage()
             ]);
