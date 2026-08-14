@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use setasign\Fpdi\Fpdi;
 
-// Load our working FPDF manually
 require_once app_path('Libraries/FPDF/fpdf.php');
 
 class SplitPdfController extends Controller
@@ -23,37 +22,36 @@ class SplitPdfController extends Controller
         ]);
 
         try {
-            // Create FPDI PDF object
-            $pdf = new Fpdi();
-
-            // Uploaded PDF
             $file = $request->file('pdf');
 
-            // Load source PDF
-            $pageCount = $pdf->setSourceFile($file->getRealPath());
+            if (!$file || !$file->isValid()) {
+                return back()->withErrors([
+                    'pdf' => 'Please upload a valid PDF file.'
+                ]);
+            }
 
-            // Requested page
-            $pageNumber = (int) $request->page;
+            $pdf = new Fpdi();
 
-            // Check requested page exists
+            $pageCount = $pdf->setSourceFile(
+                $file->getRealPath()
+            );
+
+            $pageNumber = (int) $request->input('page');
+
             if ($pageNumber > $pageCount) {
                 return back()->withErrors([
                     'page' => "This PDF has only {$pageCount} pages."
                 ]);
             }
 
-            // Import selected page
             $templateId = $pdf->importPage($pageNumber);
 
-            // Get original page size
             $size = $pdf->getTemplateSize($templateId);
 
-            // Determine orientation
-            $orientation = $size['width'] > $size['height']
+            $orientation = ($size['width'] > $size['height'])
                 ? 'L'
                 : 'P';
 
-            // Add page with original dimensions
             $pdf->AddPage(
                 $orientation,
                 [
@@ -62,34 +60,26 @@ class SplitPdfController extends Controller
                 ]
             );
 
-            // Place imported page
             $pdf->useTemplate($templateId);
 
-            // Create unique filename
-            $fileName = 'split-page-' . time() . '.pdf';
+            $fileName = 'split-page-' . time() . '-' . uniqid() . '.pdf';
 
-            // Storage directory
             $storagePath = storage_path('app');
 
-            // Create storage directory if needed
             if (!is_dir($storagePath)) {
                 mkdir($storagePath, 0777, true);
             }
 
-            // Full file path
             $filePath = $storagePath . DIRECTORY_SEPARATOR . $fileName;
 
-            // Save PDF
             $pdf->Output($filePath, 'F');
 
-            // Verify file
-            if (!file_exists($filePath)) {
+            if (!file_exists($filePath) || filesize($filePath) === 0) {
                 return back()->withErrors([
                     'pdf' => 'Split PDF could not be created.'
                 ]);
             }
 
-            // Download and delete after sending
             return response()
                 ->download($filePath, $fileName)
                 ->deleteFileAfterSend(true);
