@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use setasign\Fpdi\Fpdi;
 
+require_once base_path('vendor/setasign/fpdf/fpdf.php');
+
 class MergePdfController extends Controller
 {
     public function index()
