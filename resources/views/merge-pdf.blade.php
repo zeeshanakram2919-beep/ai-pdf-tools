@@ -36,10 +36,6 @@
             line-height: 1.6;
         }
 
-        /* =========================
-           NAVBAR
-        ========================= */
-
         .navbar {
             background: #ffffff;
             border-bottom: 1px solid #e5e7eb;
@@ -57,19 +53,11 @@
             color: #111827;
         }
 
-        /* =========================
-           MAIN CONTAINER
-        ========================= */
-
         .container {
             max-width: 850px;
             margin: 55px auto;
             padding: 20px;
         }
-
-        /* =========================
-           BACK LINK
-        ========================= */
 
         .back {
             display: inline-block;
@@ -83,10 +71,6 @@
         .back:hover {
             text-decoration: underline;
         }
-
-        /* =========================
-           CARD
-        ========================= */
 
         .card {
             background: #ffffff;
@@ -109,10 +93,6 @@
             font-size: 16px;
             margin-bottom: 30px;
         }
-
-        /* =========================
-           UPLOAD AREA
-        ========================= */
 
         .upload-area {
             border: 2px dashed #2563eb;
@@ -144,10 +124,6 @@
             font-size: 14px;
         }
 
-        /* =========================
-           BUTTON
-        ========================= */
-
         .button {
             border: none;
             background: #2563eb;
@@ -164,19 +140,16 @@
             background: #1d4ed8;
         }
 
-        /* =========================
-           NOTE
-        ========================= */
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
 
         .note {
             margin-top: 20px;
             color: #6b7280;
             font-size: 13px;
         }
-
-        /* =========================
-           ERROR
-        ========================= */
 
         .error {
             background: #fee2e2;
@@ -187,10 +160,6 @@
             text-align: left;
             font-size: 14px;
         }
-
-        /* =========================
-           SEO CONTENT
-        ========================= */
 
         .seo-content {
             max-width: 850px;
@@ -234,10 +203,6 @@
             font-size: 15px;
         }
 
-        /* =========================
-           FOOTER
-        ========================= */
-
         .footer {
             background: #111827;
             color: #9ca3af;
@@ -266,9 +231,27 @@
             text-decoration: underline;
         }
 
-        /* =========================
-           MOBILE
-        ========================= */
+        .file-list {
+            margin-top: 20px;
+            text-align: left;
+            display: none;
+        }
+
+        .file-list-title {
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #111827;
+        }
+
+        .file-item {
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 7px;
+            font-size: 14px;
+            color: #374151;
+            word-break: break-word;
+        }
 
         @media (max-width: 600px) {
 
@@ -318,11 +301,184 @@
 
 <body>
 
-<!-- =========================
-     NAVBAR
-========================= -->
-
 <nav class="navbar">
-
     <a href="{{ url('/') }}" class="logo">
-       
+        AI PDF <span>Tools</span>
+    </a>
+</nav>
+
+<main class="container">
+
+    <a href="{{ url('/') }}" class="back">
+        ← Back to Home
+    </a>
+
+    <div class="card">
+
+        <h1>Merge PDF Files</h1>
+
+        <p class="description">
+            Combine multiple PDF files into one PDF document quickly and easily.
+        </p>
+
+        @if(session('error'))
+            <div class="error">
+                {{ session('error') }}
+            </div>
+        @endif
+
+        @if($errors->any())
+            <div class="error">
+                <strong>Please fix the following:</strong>
+                <ul style="margin: 8px 0 0 20px;">
+                    @foreach($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
+        <form
+            action="{{ route('merge-pdf.process') }}"
+            method="POST"
+            enctype="multipart/form-data"
+            id="mergeForm"
+        >
+
+            @csrf
+
+            <div class="upload-area">
+
+                <div class="upload-icon">📄</div>
+
+                <h2>Select PDF Files</h2>
+
+                <p>
+                    Choose two or more PDF files to merge into one document.
+                </p>
+
+                <input
+                    type="file"
+                    name="pdfs[]"
+                    id="pdfs"
+                    accept="application/pdf,.pdf"
+                    multiple
+                    required
+                >
+
+                <div class="file-list" id="fileList">
+                    <div class="file-list-title">
+                        Selected files:
+                    </div>
+
+                    <div id="fileItems"></div>
+                </div>
+
+            </div>
+
+            <button
+                type="submit"
+                class="button"
+                id="mergeButton"
+            >
+                Merge PDF
+            </button>
+
+        </form>
+
+        <p class="note">
+            Maximum file size: 20 MB per PDF.
+        </p>
+
+    </div>
+
+</main>
+
+<section class="seo-content">
+
+    <div class="seo-box">
+
+        <h2>Merge PDF Online</h2>
+
+        <p>
+            Easily combine multiple PDF documents into a single PDF file
+            using our free online PDF merger.
+        </p>
+
+        <h3>How to Merge PDF Files</h3>
+
+        <ul>
+            <li>Select the PDF files you want to combine.</li>
+            <li>Arrange or select your required PDF documents.</li>
+            <li>Click the Merge PDF button.</li>
+            <li>Download your combined PDF file.</li>
+        </ul>
+
+        <h3>Fast and Easy PDF Merging</h3>
+
+        <p>
+            AI PDF Tools makes it simple to combine PDF documents without
+            installing additional software.
+        </p>
+
+    </div>
+
+</section>
+
+<footer class="footer">
+
+    <div class="footer-title">
+        AI PDF Tools
+    </div>
+
+    <p>
+        Free online PDF tools for everyday document needs.
+    </p>
+
+</footer>
+
+<script>
+    const pdfInput = document.getElementById('pdfs');
+    const fileList = document.getElementById('fileList');
+    const fileItems = document.getElementById('fileItems');
+    const mergeForm = document.getElementById('mergeForm');
+    const mergeButton = document.getElementById('mergeButton');
+
+    pdfInput.addEventListener('change', function () {
+
+        fileItems.innerHTML = '';
+
+        if (this.files.length === 0) {
+            fileList.style.display = 'none';
+            return;
+        }
+
+        fileList.style.display = 'block';
+
+        Array.from(this.files).forEach(function (file, index) {
+
+            const item = document.createElement('div');
+
+            item.className = 'file-item';
+
+            item.textContent =
+                (index + 1) + '. ' +
+                file.name +
+                ' (' +
+                (file.size / 1024 / 1024).toFixed(2) +
+                ' MB)';
+
+            fileItems.appendChild(item);
+        });
+    });
+
+    mergeForm.addEventListener('submit', function () {
+
+        mergeButton.disabled = true;
+        mergeButton.textContent = 'Merging PDFs...';
+
+    });
+</script>
+
+</body>
+</html>
