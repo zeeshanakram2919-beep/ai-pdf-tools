@@ -23,4 +23,4 @@ RUN mkdir -p \
 
 RUN chmod -R 775 storage bootstrap/cache
 
-CMD ["php", "artisan", "octane:frankenphp", "--host=0.0.0.0", "--port=8080"]
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]
