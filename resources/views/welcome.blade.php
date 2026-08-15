@@ -222,6 +222,12 @@
             font-size: 13px;
         }
 
+        .copyright {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #9ca3af;
+        }
+
         @media (max-width: 800px) {
 
             .tools-grid {
@@ -488,6 +494,10 @@
 
     <p>
         Free online PDF tools for everyday document needs.
+    </p>
+
+    <p class="copyright">
+        © {{ date('Y') }} AI PDF Tools. All rights reserved.
     </p>
 
 </footer>
