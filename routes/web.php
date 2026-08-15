@@ -111,3 +111,44 @@ Route::get('/watermark-pdf', [WatermarkPdfController::class, 'index'])
 
 Route::post('/watermark-pdf', [WatermarkPdfController::class, 'watermark'])
     ->name('watermark-pdf.process');
+
+
+/*
+|--------------------------------------------------------------------------
+| XML Sitemap
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/sitemap.xml', function () {
+
+    $urls = [
+        url('/'),
+        url('/merge-pdf'),
+        url('/split-pdf'),
+        url('/compress-pdf'),
+        url('/jpg-to-pdf'),
+        url('/pdf-to-jpg'),
+        url('/rotate-pdf'),
+        url('/watermark-pdf'),
+    ];
+
+    $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+
+    $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+
+    foreach ($urls as $url) {
+
+        $xml .= '<url>';
+
+        $xml .= '<loc>'
+            . htmlspecialchars($url, ENT_XML1, 'UTF-8')
+            . '</loc>';
+
+        $xml .= '</url>';
+    }
+
+    $xml .= '</urlset>';
+
+    return response($xml, 200)
+        ->header('Content-Type', 'application/xml');
+})->name('sitemap');
