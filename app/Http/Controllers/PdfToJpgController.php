@@ -3,18 +3,32 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 class PdfToJpgController extends Controller
 {
+    /**
+     * Show PDF to JPG page.
+     */
     public function index()
     {
         return view('pdf-to-jpg');
     }
 
+    /**
+     * Convert PDF pages to JPG images.
+     */
     public function convert(Request $request)
     {
         $request->validate([
-            'pdf' => 'required|file|mimes:pdf|max:20480',
+            'pdf' => [
+                'required',
+                'file',
+                'mimes:pdf',
+                'max:20480',
+            ],
         ]);
 
         $outputDirectory = null;
@@ -24,18 +38,17 @@ class PdfToJpgController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Ghostscript Path
+            | Find Ghostscript
             |--------------------------------------------------------------------------
             */
 
-            $ghostscript = 'C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe';
+            $ghostscript = $this->findGhostscript();
 
-            if (!file_exists($ghostscript)) {
-                throw new \Exception(
-                    'Ghostscript was not found at: ' . $ghostscript
+            if (!$ghostscript) {
+                throw new \RuntimeException(
+                    'Ghostscript could not be found on this server.'
                 );
             }
-
 
             /*
             |--------------------------------------------------------------------------
@@ -47,33 +60,68 @@ class PdfToJpgController extends Controller
 
             $inputFile = $file->getRealPath();
 
-            if (!$inputFile || !file_exists($inputFile)) {
-                throw new \Exception(
+            if (
+                !$inputFile ||
+                !file_exists($inputFile)
+            ) {
+                throw new \RuntimeException(
                     'Uploaded PDF could not be found.'
                 );
             }
 
-
             /*
             |--------------------------------------------------------------------------
-            | Temporary Directory
+            | Create unique temporary directories
             |--------------------------------------------------------------------------
             */
 
             $outputDirectory = storage_path(
-                'app/pdf-to-jpg-' . uniqid()
+                'app' .
+                DIRECTORY_SEPARATOR .
+                'pdf-to-jpg-' .
+                Str::uuid()->toString()
             );
 
-            if (!mkdir($outputDirectory, 0777, true)) {
-                throw new \Exception(
-                    'Could not create temporary directory.'
-                );
-            }
+            $ghostscriptTempDirectory = storage_path(
+                'app' .
+                DIRECTORY_SEPARATOR .
+                'gs-temp-' .
+                Str::uuid()->toString()
+            );
 
+            File::makeDirectory(
+                $outputDirectory,
+                0755,
+                true
+            );
+
+            File::makeDirectory(
+                $ghostscriptTempDirectory,
+                0755,
+                true
+            );
 
             /*
             |--------------------------------------------------------------------------
-            | Output Pattern
+            | Verify directories
+            |--------------------------------------------------------------------------
+            */
+
+            if (!is_writable($outputDirectory)) {
+                throw new \RuntimeException(
+                    'PDF-to-JPG temporary directory is not writable.'
+                );
+            }
+
+            if (!is_writable($ghostscriptTempDirectory)) {
+                throw new \RuntimeException(
+                    'Ghostscript temporary directory is not writable.'
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Output pattern
             |--------------------------------------------------------------------------
             */
 
@@ -82,28 +130,53 @@ class PdfToJpgController extends Controller
                 DIRECTORY_SEPARATOR .
                 'page-%03d.jpg';
 
-
             /*
             |--------------------------------------------------------------------------
-            | Ghostscript Command
+            | Ghostscript command
             |--------------------------------------------------------------------------
             */
 
-            $command =
-                '"' . $ghostscript . '"' .
-                ' -dSAFER' .
-                ' -dBATCH' .
-                ' -dNOPAUSE' .
-                ' -sDEVICE=jpeg' .
-                ' -r150' .
-                ' -dJPEGQ=90' .
-                ' -sOutputFile="' .
-                $outputPattern .
-                '"' .
-                ' "' .
-                $inputFile .
-                '"';
+            $command = [
+                $ghostscript,
 
+                '-dSAFER',
+                '-dBATCH',
+                '-dNOPAUSE',
+
+                '-sDEVICE=jpeg',
+
+                /*
+                |--------------------------------------------------------------------------
+                | 150 DPI
+                |--------------------------------------------------------------------------
+                */
+
+                '-r150',
+
+                /*
+                |--------------------------------------------------------------------------
+                | JPEG Quality
+                |--------------------------------------------------------------------------
+                */
+
+                '-dJPEGQ=90',
+
+                /*
+                |--------------------------------------------------------------------------
+                | Output
+                |--------------------------------------------------------------------------
+                */
+
+                '-sOutputFile=' . $outputPattern,
+
+                /*
+                |--------------------------------------------------------------------------
+                | Input
+                |--------------------------------------------------------------------------
+                */
+
+                $inputFile,
+            ];
 
             /*
             |--------------------------------------------------------------------------
@@ -111,15 +184,23 @@ class PdfToJpgController extends Controller
             |--------------------------------------------------------------------------
             */
 
-            $output = [];
-            $returnCode = 0;
+            $process = new Process($command);
 
-            exec(
-                $command . ' 2>&1',
-                $output,
-                $returnCode
-            );
+            $process->setTimeout(120);
 
+            /*
+            |--------------------------------------------------------------------------
+            | Dedicated temporary directory
+            |--------------------------------------------------------------------------
+            */
+
+            $process->setEnv([
+                'TEMP' => $ghostscriptTempDirectory,
+                'TMP' => $ghostscriptTempDirectory,
+                'TMPDIR' => $ghostscriptTempDirectory,
+            ]);
+
+            $process->run();
 
             /*
             |--------------------------------------------------------------------------
@@ -127,17 +208,34 @@ class PdfToJpgController extends Controller
             |--------------------------------------------------------------------------
             */
 
-            if ($returnCode !== 0) {
-                throw new \Exception(
-                    "Ghostscript failed:\n\n" .
-                    implode("\n", $output)
+            if (!$process->isSuccessful()) {
+
+                $errorOutput = trim(
+                    $process->getErrorOutput()
+                );
+
+                $standardOutput = trim(
+                    $process->getOutput()
+                );
+
+                $errorMessage =
+                    $errorOutput !== ''
+                    ? $errorOutput
+                    : $standardOutput;
+
+                throw new \RuntimeException(
+                    'Ghostscript failed.' .
+                    (
+                        $errorMessage !== ''
+                        ? ' ' . $errorMessage
+                        : ''
+                    )
                 );
             }
 
-
             /*
             |--------------------------------------------------------------------------
-            | Find JPG Files
+            | Find generated JPGs
             |--------------------------------------------------------------------------
             */
 
@@ -148,18 +246,24 @@ class PdfToJpgController extends Controller
             );
 
             if (empty($jpgFiles)) {
-                throw new \Exception(
+                throw new \RuntimeException(
                     'Ghostscript completed but no JPG images were created.'
                 );
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Sort pages correctly
+            |--------------------------------------------------------------------------
+            */
 
-            sort($jpgFiles);
+            natsort($jpgFiles);
 
+            $jpgFiles = array_values($jpgFiles);
 
             /*
             |--------------------------------------------------------------------------
-            | ONE PAGE
+            | One page
             |--------------------------------------------------------------------------
             */
 
@@ -167,20 +271,21 @@ class PdfToJpgController extends Controller
 
                 $sourceFile = $jpgFiles[0];
 
-                $downloadName = 'pdf-page-1.jpg';
+                $downloadName =
+                    'pdf-page-1.jpg';
 
-                /*
-                | Copy JPG to permanent storage
-                */
+                $downloadPath =
+                    storage_path(
+                        'app' .
+                        DIRECTORY_SEPARATOR .
+                        $downloadName
+                    );
 
-                $downloadPath = storage_path(
-                    'app' .
-                    DIRECTORY_SEPARATOR .
-                    $downloadName
-                );
-
-                if (!copy($sourceFile, $downloadPath)) {
-                    throw new \Exception(
+                if (!copy(
+                    $sourceFile,
+                    $downloadPath
+                )) {
+                    throw new \RuntimeException(
                         'Could not prepare JPG for download.'
                     );
                 }
@@ -189,7 +294,7 @@ class PdfToJpgController extends Controller
                     !file_exists($downloadPath) ||
                     filesize($downloadPath) <= 0
                 ) {
-                    throw new \Exception(
+                    throw new \RuntimeException(
                         'Generated JPG is empty or missing.'
                     );
                 }
@@ -197,33 +302,36 @@ class PdfToJpgController extends Controller
                 return response()
                     ->download(
                         $downloadPath,
-                        $downloadName
+                        $downloadName,
+                        [
+                            'Content-Type' =>
+                                'image/jpeg',
+                        ]
                     )
                     ->deleteFileAfterSend(true);
             }
 
-
             /*
             |--------------------------------------------------------------------------
-            | MULTIPLE PAGES
-            |--------------------------------------------------------------------------
-            | Create ZIP in permanent storage
+            | Multiple pages → ZIP
             |--------------------------------------------------------------------------
             */
 
             $zipName =
                 'pdf-to-jpg-' .
                 date('Ymd-His') .
+                '-' .
+                uniqid() .
                 '.zip';
 
-            $zipPath = storage_path(
-                'app' .
-                DIRECTORY_SEPARATOR .
-                $zipName
-            );
+            $zipPath =
+                storage_path(
+                    'app' .
+                    DIRECTORY_SEPARATOR .
+                    $zipName
+                );
 
             $downloadPath = $zipPath;
-
 
             /*
             |--------------------------------------------------------------------------
@@ -240,19 +348,20 @@ class PdfToJpgController extends Controller
             );
 
             if ($result !== true) {
-                throw new \Exception(
+                throw new \RuntimeException(
                     'Could not create ZIP file.'
                 );
             }
 
-
             /*
             |--------------------------------------------------------------------------
-            | Add JPG Files
+            | Add JPG files
             |--------------------------------------------------------------------------
             */
 
-            foreach ($jpgFiles as $index => $jpgFile) {
+            foreach (
+                $jpgFiles as $index => $jpgFile
+            ) {
 
                 if (
                     !file_exists($jpgFile) ||
@@ -260,7 +369,7 @@ class PdfToJpgController extends Controller
                 ) {
                     $zip->close();
 
-                    throw new \Exception(
+                    throw new \RuntimeException(
                         'Generated JPG file could not be read.'
                     );
                 }
@@ -280,7 +389,6 @@ class PdfToJpgController extends Controller
                 );
             }
 
-
             /*
             |--------------------------------------------------------------------------
             | Close ZIP
@@ -289,10 +397,9 @@ class PdfToJpgController extends Controller
 
             $zip->close();
 
-
             /*
             |--------------------------------------------------------------------------
-            | Check ZIP
+            | Verify ZIP
             |--------------------------------------------------------------------------
             */
 
@@ -300,11 +407,10 @@ class PdfToJpgController extends Controller
                 !file_exists($zipPath) ||
                 filesize($zipPath) <= 0
             ) {
-                throw new \Exception(
+                throw new \RuntimeException(
                     'ZIP file could not be created.'
                 );
             }
-
 
             /*
             |--------------------------------------------------------------------------
@@ -315,16 +421,19 @@ class PdfToJpgController extends Controller
             return response()
                 ->download(
                     $zipPath,
-                    $zipName
+                    $zipName,
+                    [
+                        'Content-Type' =>
+                            'application/zip',
+                    ]
                 )
                 ->deleteFileAfterSend(true);
-
 
         } catch (\Throwable $e) {
 
             /*
             |--------------------------------------------------------------------------
-            | Remove Permanent Download File If Error
+            | Remove failed download
             |--------------------------------------------------------------------------
             */
 
@@ -335,24 +444,25 @@ class PdfToJpgController extends Controller
                 @unlink($downloadPath);
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Return error
+            |--------------------------------------------------------------------------
+            */
 
-            return back()->withErrors([
-                'pdf' =>
-                    'PDF to JPG conversion failed: ' .
-                    $e->getMessage()
-            ]);
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'pdf' =>
+                        'PDF to JPG conversion failed: ' .
+                        $e->getMessage(),
+                ]);
 
         } finally {
 
             /*
             |--------------------------------------------------------------------------
-            | Cleanup Temporary Directory
-            |--------------------------------------------------------------------------
-            |
-            | IMPORTANT:
-            | This only removes the temporary Ghostscript folder.
-            | The actual download file is kept outside this folder
-            | until Laravel finishes sending it.
+            | Cleanup generated JPG directory
             |--------------------------------------------------------------------------
             */
 
@@ -377,5 +487,128 @@ class PdfToJpgController extends Controller
                 @rmdir($outputDirectory);
             }
         }
+    }
+
+    /**
+     * Find Ghostscript executable.
+     */
+    private function findGhostscript(): ?string
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | Windows
+        |--------------------------------------------------------------------------
+        */
+
+        if (PHP_OS_FAMILY === 'Windows') {
+
+            $windowsPaths = [
+                'C:\\Program Files\\gs\\gs10.07.1\\bin\\gswin64c.exe',
+                'C:\\Program Files\\gs\\bin\\gswin64c.exe',
+                'C:\\Program Files\\gs\\gs10.07.1\\bin\\gswin32c.exe',
+                'C:\\Program Files\\gs\\bin\\gswin32c.exe',
+            ];
+
+            foreach ($windowsPaths as $path) {
+
+                if (is_file($path)) {
+                    return $path;
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Windows PATH
+            |--------------------------------------------------------------------------
+            */
+
+            $process = new Process([
+                'where.exe',
+                'gswin64c.exe',
+            ]);
+
+            $process->setTimeout(10);
+
+            $process->run();
+
+            if ($process->isSuccessful()) {
+
+                $output = trim(
+                    $process->getOutput()
+                );
+
+                if ($output !== '') {
+
+                    $path = trim(
+                        strtok(
+                            $output,
+                            PHP_EOL
+                        )
+                    );
+
+                    if (
+                        $path !== '' &&
+                        is_file($path)
+                    ) {
+                        return $path;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Linux / Railway
+        |--------------------------------------------------------------------------
+        */
+
+        $linuxPaths = [
+            '/usr/bin/gs',
+            '/usr/local/bin/gs',
+            '/bin/gs',
+        ];
+
+        foreach ($linuxPaths as $path) {
+
+            if (
+                is_file($path) &&
+                is_executable($path)
+            ) {
+                return $path;
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Linux PATH
+        |--------------------------------------------------------------------------
+        */
+
+        $process = new Process([
+            'which',
+            'gs',
+        ]);
+
+        $process->setTimeout(10);
+
+        $process->run();
+
+        if ($process->isSuccessful()) {
+
+            $path = trim(
+                $process->getOutput()
+            );
+
+            if (
+                $path !== '' &&
+                is_file($path)
+            ) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 }
