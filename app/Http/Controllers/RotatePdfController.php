@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+
+require_once app_path('Libraries/FPDF/fpdf.php');
+
 use setasign\Fpdi\Fpdi;
 
 class RotatePdfController extends Controller
@@ -24,15 +27,11 @@ class RotatePdfController extends Controller
 
         try {
 
-            /*
-             * Load FPDF before FPDI
-             */
-            
-
             $pdf = new Fpdi();
 
             $pdf->SetAutoPageBreak(false);
             $pdf->SetMargins(0, 0, 0);
+            $pdf->SetCompression(true);
 
             $pageCount = $pdf->setSourceFile($inputPath);
 
@@ -43,7 +42,6 @@ class RotatePdfController extends Controller
             for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
 
                 $template = $pdf->importPage($pageNo);
-
                 $size = $pdf->getTemplateSize($template);
 
                 $width = (float) $size['width'];
@@ -56,117 +54,37 @@ class RotatePdfController extends Controller
                 }
 
                 /*
-                 * 180 DEGREE
+                 * IMPORTANT
+                 *
+                 * We do NOT manually rotate the template.
+                 * We create the page with the required rotation.
+                 *
+                 * This rotates the COMPLETE PDF page instead of
+                 * moving the content outside the page boundaries.
                  */
-                if ($angle === 180) {
 
-                    $orientation = $width > $height ? 'L' : 'P';
-
-                    $pdf->AddPage(
-                        $orientation,
-                        [$width, $height]
-                    );
-
-                    $pdf->useTemplate(
-                        $template,
-                        $width,
-                        $height,
-                        -$width,
-                        -$height
-                    );
-                }
+                $pdf->AddPage(
+                    $width > $height ? 'L' : 'P',
+                    [$width, $height],
+                    $angle
+                );
 
                 /*
-                 * 90 DEGREE
+                 * Put the COMPLETE original page onto the new page.
+                 *
+                 * No manual matrix.
+                 * No negative coordinates.
+                 * No X/Y translation.
                  */
-                elseif ($angle === 90) {
 
-                    $newWidth = $height;
-                    $newHeight = $width;
-
-                    if ($newWidth <= 0 || $newHeight <= 0) {
-                        throw new \Exception(
-                            "Invalid rotated page size."
-                        );
-                    }
-
-                    $orientation = $newWidth > $newHeight
-                        ? 'L'
-                        : 'P';
-
-                    $pdf->AddPage(
-                        $orientation,
-                        [$newWidth, $newHeight]
-                    );
-
-                    /*
-                     * Rotate clockwise.
-                     *
-                     * The translation is based on the NEW
-                     * page height so the complete page remains
-                     * inside the canvas.
-                     */
-                    $pdf->_out(
-                        sprintf(
-                            'q 0 1 -1 0 %.4F 0 cm',
-                            $newWidth
-                        )
-                    );
-
-                    $pdf->useTemplate(
-                        $template,
-                        0,
-                        0,
-                        $width,
-                        $height
-                    );
-
-                    $pdf->_out('Q');
-                }
-
-                /*
-                 * 270 DEGREE
-                 */
-                elseif ($angle === 270) {
-
-                    $newWidth = $height;
-                    $newHeight = $width;
-
-                    if ($newWidth <= 0 || $newHeight <= 0) {
-                        throw new \Exception(
-                            "Invalid rotated page size."
-                        );
-                    }
-
-                    $orientation = $newWidth > $newHeight
-                        ? 'L'
-                        : 'P';
-
-                    $pdf->AddPage(
-                        $orientation,
-                        [$newWidth, $newHeight]
-                    );
-
-                    /*
-                     * Rotate counter-clockwise.
-                     */
-                    $pdf->_out(
-                        sprintf(
-                            'q 0 -1 1 0 0 %.4F cm',
-                            $newHeight
-                        )
-                    );
-
-                    $pdf->useTemplate(
-                        $template,
-                        0,
-                        0,
-                        $width,
-                        $height
-                    );
-
-                    $pdf->_out('Q');
-                }
+                $pdf->useTemplate(
+                    $template,
+                    0,
+                    0,
+                    $width,
+                    $height,
+                    false
+                );
             }
 
             $fileName =
