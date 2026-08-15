@@ -9,7 +9,7 @@
 
     <meta
         name="description"
-        content="Free online PDF tools to merge, split, compress, rotate, convert and manage PDF files easily."
+        content="Free online PDF tools to merge, split, compress, rotate, watermark, convert and manage PDF files easily."
     >
 
     <meta name="robots" content="index, follow">
@@ -288,8 +288,8 @@
     </h1>
 
     <p>
-        Free online tools to merge, split, compress, rotate and convert
-        your PDF files quickly and easily.
+        Free online tools to merge, split, compress, rotate, watermark and
+        convert your PDF files quickly and easily.
     </p>
 
 </section>
@@ -308,6 +308,7 @@
 
     <div class="tools-grid">
 
+        {{-- MERGE PDF --}}
         <div class="tool-card">
 
             <div class="tool-icon">📑</div>
@@ -327,6 +328,7 @@
 
         </div>
 
+        {{-- SPLIT PDF --}}
         <div class="tool-card">
 
             <div class="tool-icon">✂️</div>
@@ -346,6 +348,7 @@
 
         </div>
 
+        {{-- COMPRESS PDF --}}
         <div class="tool-card">
 
             <div class="tool-icon">🗜️</div>
@@ -365,6 +368,7 @@
 
         </div>
 
+        {{-- ROTATE PDF --}}
         <div class="tool-card">
 
             <div class="tool-icon">🔄</div>
@@ -384,6 +388,7 @@
 
         </div>
 
+        {{-- JPG TO PDF --}}
         <div class="tool-card">
 
             <div class="tool-icon">🖼️</div>
@@ -403,6 +408,7 @@
 
         </div>
 
+        {{-- PDF TO JPG --}}
         <div class="tool-card">
 
             <div class="tool-icon">📄</div>
@@ -415,6 +421,26 @@
 
             <a
                 href="{{ url('/pdf-to-jpg') }}"
+                class="tool-button"
+            >
+                Use Tool
+            </a>
+
+        </div>
+
+        {{-- WATERMARK PDF --}}
+        <div class="tool-card">
+
+            <div class="tool-icon">💧</div>
+
+            <h3>Watermark PDF</h3>
+
+            <p>
+                Add a custom text watermark to your PDF pages.
+            </p>
+
+            <a
+                href="{{ url('/watermark-pdf') }}"
                 class="tool-button"
             >
                 Use Tool
@@ -445,6 +471,7 @@
             <li>Split PDF documents.</li>
             <li>Compress PDF files.</li>
             <li>Rotate PDF pages.</li>
+            <li>Add watermarks to PDF documents.</li>
             <li>Convert images to PDF.</li>
             <li>Convert PDF pages to images.</li>
         </ul>
