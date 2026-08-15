@@ -3,48 +3,73 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use setasign\Fpdi\Fpdi;
+
+/*
+|--------------------------------------------------------------------------
+| Load FPDF
+|--------------------------------------------------------------------------
+|
+| Your project currently has the FPDF file bundled with FPDI.
+| We load it once and use the FPDF class directly.
+|
+*/
+
+$fpdfPath = base_path('vendor/setasign/fpdi/fpdf.php');
+
+if (!file_exists($fpdfPath)) {
+    throw new \RuntimeException(
+        'FPDF library not found: ' . $fpdfPath
+    );
+}
+
+require_once $fpdfPath;
 
 class JpgToPdfController extends Controller
 {
+    /**
+     * Show JPG to PDF page.
+     */
     public function index()
     {
         return view('jpg-to-pdf');
     }
 
+    /**
+     * Convert JPG images to PDF.
+     */
     public function convert(Request $request)
     {
         $request->validate([
-            'images' => 'required|array|min:1',
-            'images.*' => 'required|image|mimes:jpg,jpeg|max:20480',
+            'images' => [
+                'required',
+                'array',
+                'min:1',
+            ],
+            'images.*' => [
+                'required',
+                'image',
+                'mimes:jpg,jpeg',
+                'max:20480',
+            ],
         ]);
+
+        $filePath = null;
 
         try {
 
             /*
             |--------------------------------------------------------------------------
-            | Load FPDF Manually
+            | Create FPDF document
             |--------------------------------------------------------------------------
             */
 
-           
-
-            require
-
-            /*
-            |--------------------------------------------------------------------------
-            | Create FPDI PDF
-            |--------------------------------------------------------------------------
-            */
-
-            $pdf = new Fpdi();
+            $pdf = new \FPDF();
 
             $pdf->SetAutoPageBreak(false);
 
-
             /*
             |--------------------------------------------------------------------------
-            | Process Images
+            | Process all uploaded images
             |--------------------------------------------------------------------------
             */
 
@@ -52,35 +77,44 @@ class JpgToPdfController extends Controller
 
                 $imagePath = $image->getRealPath();
 
-                if (!file_exists($imagePath)) {
-                    throw new \Exception(
-                        'Uploaded image not found.'
+                if (
+                    !$imagePath ||
+                    !file_exists($imagePath)
+                ) {
+                    throw new \RuntimeException(
+                        'Uploaded image could not be found.'
                     );
                 }
 
-
                 /*
                 |--------------------------------------------------------------------------
-                | Get Image Size
+                | Get image dimensions
                 |--------------------------------------------------------------------------
                 */
 
                 $imageInfo = getimagesize($imagePath);
 
                 if ($imageInfo === false) {
-                    throw new \Exception(
+                    throw new \RuntimeException(
                         'Invalid JPG image.'
                     );
                 }
 
-
                 $imageWidth = $imageInfo[0];
                 $imageHeight = $imageInfo[1];
 
+                if (
+                    $imageWidth <= 0 ||
+                    $imageHeight <= 0
+                ) {
+                    throw new \RuntimeException(
+                        'Invalid image dimensions.'
+                    );
+                }
 
                 /*
                 |--------------------------------------------------------------------------
-                | A4 Page
+                | A4 orientation
                 |--------------------------------------------------------------------------
                 */
 
@@ -88,17 +122,14 @@ class JpgToPdfController extends Controller
 
                     $pageWidth = 297;
                     $pageHeight = 210;
-
                     $orientation = 'L';
 
                 } else {
 
                     $pageWidth = 210;
                     $pageHeight = 297;
-
                     $orientation = 'P';
                 }
-
 
                 /*
                 |--------------------------------------------------------------------------
@@ -114,10 +145,9 @@ class JpgToPdfController extends Controller
                 $availableHeight =
                     $pageHeight - ($margin * 2);
 
-
                 /*
                 |--------------------------------------------------------------------------
-                | Calculate Image Size
+                | Maintain image aspect ratio
                 |--------------------------------------------------------------------------
                 */
 
@@ -132,10 +162,9 @@ class JpgToPdfController extends Controller
                 $pdfHeight =
                     $imageHeight * $ratio;
 
-
                 /*
                 |--------------------------------------------------------------------------
-                | Add A4 Page
+                | Add page
                 |--------------------------------------------------------------------------
                 */
 
@@ -144,10 +173,9 @@ class JpgToPdfController extends Controller
                     'A4'
                 );
 
-
                 /*
                 |--------------------------------------------------------------------------
-                | Center Image
+                | Center image
                 |--------------------------------------------------------------------------
                 */
 
@@ -157,10 +185,9 @@ class JpgToPdfController extends Controller
                 $y =
                     ($pageHeight - $pdfHeight) / 2;
 
-
                 /*
                 |--------------------------------------------------------------------------
-                | Add JPG
+                | Add JPG image
                 |--------------------------------------------------------------------------
                 */
 
@@ -174,43 +201,41 @@ class JpgToPdfController extends Controller
                 );
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Create storage directory
+            |--------------------------------------------------------------------------
+            */
+
+            $storagePath = storage_path(
+                'app' . DIRECTORY_SEPARATOR . 'jpg-to-pdf'
+            );
+
+            if (!is_dir($storagePath)) {
+                mkdir(
+                    $storagePath,
+                    0755,
+                    true
+                );
+            }
 
             /*
             |--------------------------------------------------------------------------
-            | File Name
+            | Output filename
             |--------------------------------------------------------------------------
             */
 
             $fileName =
                 'jpg-to-pdf-' .
                 date('Ymd-His') .
+                '-' .
+                uniqid() .
                 '.pdf';
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Storage Path
-            |--------------------------------------------------------------------------
-            */
-
-            $storagePath =
-                storage_path('app');
-
-
-            if (!is_dir($storagePath)) {
-                mkdir(
-                    $storagePath,
-                    0777,
-                    true
-                );
-            }
-
 
             $filePath =
                 $storagePath .
                 DIRECTORY_SEPARATOR .
                 $fileName;
-
 
             /*
             |--------------------------------------------------------------------------
@@ -219,14 +244,13 @@ class JpgToPdfController extends Controller
             */
 
             $pdf->Output(
-                $filePath,
-                'F'
+                'F',
+                $filePath
             );
-
 
             /*
             |--------------------------------------------------------------------------
-            | Check PDF
+            | Verify output
             |--------------------------------------------------------------------------
             */
 
@@ -234,34 +258,56 @@ class JpgToPdfController extends Controller
                 !file_exists($filePath) ||
                 filesize($filePath) <= 0
             ) {
-
-                throw new \Exception(
+                throw new \RuntimeException(
                     'PDF file could not be created.'
                 );
             }
 
-
             /*
             |--------------------------------------------------------------------------
-            | Download
+            | Download PDF
             |--------------------------------------------------------------------------
             */
 
             return response()
                 ->download(
                     $filePath,
-                    $fileName
+                    'converted-images.pdf',
+                    [
+                        'Content-Type' =>
+                            'application/pdf',
+                    ]
                 )
                 ->deleteFileAfterSend(true);
 
-
         } catch (\Throwable $e) {
 
-            return back()->withErrors([
-                'images' =>
-                    'JPG to PDF conversion failed: ' .
-                    $e->getMessage()
-            ]);
+            /*
+            |--------------------------------------------------------------------------
+            | Cleanup failed output
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $filePath &&
+                file_exists($filePath)
+            ) {
+                @unlink($filePath);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Return error
+            |--------------------------------------------------------------------------
+            */
+
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'images' =>
+                        'JPG to PDF conversion failed: ' .
+                        $e->getMessage(),
+                ]);
         }
     }
 }
