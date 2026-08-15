@@ -18,70 +18,102 @@ class CompressPdfController extends Controller
         ]);
 
         try {
-
-            // Uploaded PDF
             $file = $request->file('pdf');
 
-            // Input PDF path
             $inputPath = $file->getRealPath();
 
-            // Create unique filename
-            $fileName = 'compressed-' . time() . '.pdf';
+            if (!$inputPath || !file_exists($inputPath)) {
+                return back()->withErrors([
+                    'pdf' => 'Uploaded PDF file could not be found.'
+                ]);
+            }
 
-            // Storage directory
+            /*
+            |--------------------------------------------------------------------------
+            | Detect Ghostscript
+            |--------------------------------------------------------------------------
+            */
+
+            if (PHP_OS_FAMILY === 'Windows') {
+                $ghostscript = 'C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe';
+            } else {
+                $ghostscript = '/usr/bin/gs';
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Check Ghostscript
+            |--------------------------------------------------------------------------
+            */
+
+            if (!file_exists($ghostscript)) {
+                return back()->withErrors([
+                    'pdf' => 'Ghostscript is not installed on the server.'
+                ]);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Output directory
+            |--------------------------------------------------------------------------
+            */
+
             $storagePath = storage_path('app');
 
-            // Make sure storage directory exists
             if (!is_dir($storagePath)) {
                 mkdir($storagePath, 0777, true);
             }
 
-            // Output PDF path
+            $fileName = 'compressed-' . time() . '.pdf';
+
             $outputPath = $storagePath . DIRECTORY_SEPARATOR . $fileName;
 
             /*
             |--------------------------------------------------------------------------
-            | Ghostscript
+            | Ghostscript Compression
             |--------------------------------------------------------------------------
             */
 
-            $ghostscript = 'C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe';
-
-            /*
-            |--------------------------------------------------------------------------
-            | Compression command
-            |--------------------------------------------------------------------------
-            */
-
-            $command = '"' . $ghostscript . '"'
+            $command =
+                escapeshellarg($ghostscript)
                 . ' -sDEVICE=pdfwrite'
                 . ' -dCompatibilityLevel=1.4'
                 . ' -dPDFSETTINGS=/ebook'
                 . ' -dNOPAUSE'
                 . ' -dQUIET'
                 . ' -dBATCH'
-                . ' -sOutputFile="' . $outputPath . '"'
-                . ' "' . $inputPath . '"';
+                . ' -sOutputFile=' . escapeshellarg($outputPath)
+                . ' ' . escapeshellarg($inputPath)
+                . ' 2>&1';
 
-            // Execute Ghostscript
+            $output = [];
+            $returnCode = 0;
+
             exec($command, $output, $returnCode);
 
             /*
             |--------------------------------------------------------------------------
-            | Check result
+            | Check Compression Result
             |--------------------------------------------------------------------------
             */
 
-            if ($returnCode !== 0 || !file_exists($outputPath)) {
+            if (
+                $returnCode !== 0 ||
+                !file_exists($outputPath) ||
+                filesize($outputPath) === 0
+            ) {
+                $errorMessage = !empty($output)
+                    ? implode("\n", $output)
+                    : 'Ghostscript could not compress the PDF.';
 
                 return back()->withErrors([
-                    'pdf' => 'PDF compression failed.'
+                    'pdf' => 'PDF compression failed: ' . $errorMessage
                 ]);
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Download compressed PDF
+            | Download
             |--------------------------------------------------------------------------
             */
 
