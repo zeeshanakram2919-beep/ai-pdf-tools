@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use setasign\Fpdi\Fpdi;
 
-require_once app_path('Libraries/FPDF/fpdf.php');
 
 class SplitPdfController extends Controller
 {

@@ -5,15 +5,19 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use setasign\Fpdi\Fpdi;
 
-require_once app_path('Libraries/FPDF/fpdf.php');
-
 class MergePdfController extends Controller
 {
+    /**
+     * Show Merge PDF page
+     */
     public function index()
     {
         return view('merge-pdf');
     }
 
+    /**
+     * Merge PDF files
+     */
     public function merge(Request $request)
     {
         $request->validate([
@@ -42,43 +46,39 @@ class MergePdfController extends Controller
 
                     $pdf->AddPage(
                         $orientation,
-                        [
-                            $size['width'],
-                            $size['height']
-                        ]
+                        [$size['width'], $size['height']]
                     );
 
                     $pdf->useTemplate($templateId);
                 }
             }
 
-            $fileName = 'merged-' . time() . '.pdf';
+            $outputDirectory = storage_path('app/merged');
 
-            $storagePath = storage_path('app');
-
-            if (!is_dir($storagePath)) {
-                mkdir($storagePath, 0777, true);
+            if (!is_dir($outputDirectory)) {
+                mkdir($outputDirectory, 0755, true);
             }
 
-            $filePath = $storagePath . DIRECTORY_SEPARATOR . $fileName;
+            $outputPath = $outputDirectory . '/merged-' . uniqid() . '.pdf';
 
-            $pdf->Output($filePath, 'F');
+            $pdf->Output('F', $outputPath);
 
-            if (!file_exists($filePath)) {
-                return back()->withErrors([
-                    'pdfs' => 'Merged PDF could not be created.'
-                ]);
-            }
-
-            return response()
-                ->download($filePath, $fileName)
-                ->deleteFileAfterSend(true);
+            return response()->download(
+                $outputPath,
+                'merged.pdf',
+                [
+                    'Content-Type' => 'application/pdf',
+                ]
+            )->deleteFileAfterSend(true);
 
         } catch (\Throwable $e) {
 
-            return back()->withErrors([
-                'pdfs' => 'PDF merge failed: ' . $e->getMessage()
-            ]);
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    'PDF merge failed: ' . $e->getMessage()
+                );
         }
     }
 }

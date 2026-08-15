@@ -102,10 +102,17 @@
         .error {
             background: #fee2e2;
             color: #991b1b;
-            padding: 12px;
+            padding: 14px;
             border-radius: 8px;
             margin-bottom: 20px;
             text-align: left;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .error-title {
+            font-weight: bold;
+            margin-bottom: 5px;
         }
 
         .success {
@@ -167,7 +174,6 @@
         </div>
     </nav>
 
-
     <div class="container">
 
         <div class="card">
@@ -181,22 +187,31 @@
                 maintaining good document quality.
             </p>
 
-
+            {{-- Validation errors --}}
             @if ($errors->any())
                 <div class="error">
+                    <div class="error-title">Error</div>
+
                     @foreach ($errors->all() as $error)
                         <div>{{ $error }}</div>
                     @endforeach
                 </div>
             @endif
 
+            {{-- Compression error --}}
+            @if (session('error'))
+                <div class="error">
+                    <div class="error-title">Compression Error</div>
+                    <div>{{ session('error') }}</div>
+                </div>
+            @endif
 
+            {{-- Success message --}}
             @if (session('success'))
                 <div class="success">
                     {{ session('success') }}
                 </div>
             @endif
-
 
             <form action="{{ route('compress-pdf.process') }}"
                   method="POST"
@@ -215,13 +230,11 @@
 
                 </div>
 
-
                 <button type="submit" class="button">
                     Compress PDF
                 </button>
 
             </form>
-
 
             <a href="{{ url('/') }}" class="back">
                 ← Back to PDF Tools
@@ -230,7 +243,6 @@
         </div>
 
     </div>
-
 
     <footer class="footer">
 

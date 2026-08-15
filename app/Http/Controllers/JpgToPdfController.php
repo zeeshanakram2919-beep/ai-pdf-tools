@@ -27,31 +27,9 @@ class JpgToPdfController extends Controller
             |--------------------------------------------------------------------------
             */
 
-            $fpdfFile = base_path(
-                'vendor/setasign/fpdi/fpdf.php'
-            );
+           
 
-            if (!file_exists($fpdfFile)) {
-                throw new \Exception(
-                    'FPDF file not found: ' . $fpdfFile
-                );
-            }
-
-            require_once $fpdfFile;
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Check FPDF
-            |--------------------------------------------------------------------------
-            */
-
-            if (!class_exists('FPDF')) {
-                throw new \Exception(
-                    'FPDF class could not be loaded.'
-                );
-            }
-
+            require
 
             /*
             |--------------------------------------------------------------------------

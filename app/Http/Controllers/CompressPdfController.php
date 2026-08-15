@@ -10,7 +10,7 @@ use Symfony\Component\Process\Process;
 class CompressPdfController extends Controller
 {
     /**
-     * Show compression page
+     * Show compression page.
      */
     public function index()
     {
@@ -18,17 +18,16 @@ class CompressPdfController extends Controller
     }
 
     /**
-     * Compress PDF
+     * Compress uploaded PDF.
      */
     public function compress(Request $request)
     {
-        // Validate uploaded PDF
         $request->validate([
             'pdf' => [
                 'required',
                 'file',
                 'mimes:pdf',
-                'max:51200', // 50 MB
+                'max:51200',
             ],
             'quality' => [
                 'nullable',
@@ -38,66 +37,85 @@ class CompressPdfController extends Controller
 
         $uploadedFile = $request->file('pdf');
 
-        /*
-        |--------------------------------------------------------------------------
-        | Compression quality
-        |--------------------------------------------------------------------------
-        |
-        | screen   = maximum compression
-        | ebook    = recommended compression
-        | printer  = better quality
-        | prepress = highest quality
-        |
-        */
-
         $quality = $request->input('quality', 'ebook');
 
         /*
         |--------------------------------------------------------------------------
-        | Temporary directories
+        | Create dedicated directories
         |--------------------------------------------------------------------------
         */
 
-        $tempDirectory = storage_path('app/compression');
+        $compressionDirectory = storage_path(
+            'app' . DIRECTORY_SEPARATOR . 'compression'
+        );
 
-        if (!File::exists($tempDirectory)) {
-            File::makeDirectory(
-                $tempDirectory,
-                0755,
-                true
+        $ghostscriptTempDirectory = storage_path(
+            'app' . DIRECTORY_SEPARATOR . 'gs-temp'
+        );
+
+        $this->ensureDirectory($compressionDirectory);
+        $this->ensureDirectory($ghostscriptTempDirectory);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Make sure directories are writable
+        |--------------------------------------------------------------------------
+        */
+
+        if (!is_writable($compressionDirectory)) {
+            throw new \RuntimeException(
+                'Compression directory is not writable: ' .
+                $compressionDirectory
+            );
+        }
+
+        if (!is_writable($ghostscriptTempDirectory)) {
+            throw new \RuntimeException(
+                'Ghostscript temporary directory is not writable: ' .
+                $ghostscriptTempDirectory
             );
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Generate unique filenames
+        | Unique files
         |--------------------------------------------------------------------------
         */
 
         $uniqueId = Str::uuid()->toString();
 
-        $originalPath = $tempDirectory . DIRECTORY_SEPARATOR
-            . $uniqueId . '_original.pdf';
+        $originalPath = $compressionDirectory .
+            DIRECTORY_SEPARATOR .
+            $uniqueId .
+            '_original.pdf';
 
-        $compressedPath = $tempDirectory . DIRECTORY_SEPARATOR
-            . $uniqueId . '_compressed.pdf';
-
-        /*
-        |--------------------------------------------------------------------------
-        | Store uploaded PDF
-        |--------------------------------------------------------------------------
-        */
-
-        $uploadedFile->move(
-            $tempDirectory,
-            basename($originalPath)
-        );
+        $compressedPath = $compressionDirectory .
+            DIRECTORY_SEPARATOR .
+            $uniqueId .
+            '_compressed.pdf';
 
         try {
 
             /*
             |--------------------------------------------------------------------------
-            | Find Ghostscript executable
+            | Move uploaded PDF
+            |--------------------------------------------------------------------------
+            */
+
+            $uploadedFile->move(
+                $compressionDirectory,
+                basename($originalPath)
+            );
+
+            if (!File::exists($originalPath)) {
+                throw new \RuntimeException(
+                    'Uploaded PDF could not be stored.'
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Find Ghostscript
             |--------------------------------------------------------------------------
             */
 
@@ -105,7 +123,7 @@ class CompressPdfController extends Controller
 
             if (!$ghostscript) {
                 throw new \RuntimeException(
-                    'Ghostscript is not installed or could not be found on the server.'
+                    'Ghostscript could not be found.'
                 );
             }
 
@@ -113,36 +131,23 @@ class CompressPdfController extends Controller
             |--------------------------------------------------------------------------
             | Ghostscript command
             |--------------------------------------------------------------------------
-            |
-            | We use PDFSETTINGS plus explicit image downsampling/compression.
-            | This gives Ghostscript more control over image-heavy PDFs.
-            |
             */
 
             $command = [
                 $ghostscript,
 
                 '-sDEVICE=pdfwrite',
-
                 '-dCompatibilityLevel=1.4',
 
                 '-dNOPAUSE',
-                '-dQUIET',
                 '-dBATCH',
-
                 '-dSAFER',
-
-                /*
-                |--------------------------------------------------------------------------
-                | Compression profile
-                |--------------------------------------------------------------------------
-                */
 
                 '-dPDFSETTINGS=/' . $quality,
 
                 /*
                 |--------------------------------------------------------------------------
-                | Color image compression
+                | Color images
                 |--------------------------------------------------------------------------
                 */
 
@@ -152,7 +157,7 @@ class CompressPdfController extends Controller
 
                 /*
                 |--------------------------------------------------------------------------
-                | Gray image compression
+                | Grayscale images
                 |--------------------------------------------------------------------------
                 */
 
@@ -162,7 +167,7 @@ class CompressPdfController extends Controller
 
                 /*
                 |--------------------------------------------------------------------------
-                | Monochrome image compression
+                | Monochrome images
                 |--------------------------------------------------------------------------
                 */
 
@@ -201,7 +206,7 @@ class CompressPdfController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Run Ghostscript
+            | Run Ghostscript with dedicated TEMP/TMP
             |--------------------------------------------------------------------------
             */
 
@@ -209,11 +214,24 @@ class CompressPdfController extends Controller
 
             $process->setTimeout(120);
 
+            /*
+            | This is the important fix.
+            |
+            | Ghostscript will use our writable directory instead
+            | of an empty/broken Windows temporary path.
+            */
+
+            $process->setEnv([
+                'TEMP' => $ghostscriptTempDirectory,
+                'TMP' => $ghostscriptTempDirectory,
+                'TMPDIR' => $ghostscriptTempDirectory,
+            ]);
+
             $process->run();
 
             /*
             |--------------------------------------------------------------------------
-            | Check Ghostscript result
+            | Check process
             |--------------------------------------------------------------------------
             */
 
@@ -232,8 +250,8 @@ class CompressPdfController extends Controller
                     : $standardOutput;
 
                 throw new \RuntimeException(
-                    'Ghostscript compression failed.'
-                    . ($errorMessage !== ''
+                    'Ghostscript compression failed.' .
+                    ($errorMessage !== ''
                         ? ' ' . $errorMessage
                         : '')
                 );
@@ -241,7 +259,7 @@ class CompressPdfController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Check compressed file
+            | Verify output
             |--------------------------------------------------------------------------
             */
 
@@ -250,74 +268,82 @@ class CompressPdfController extends Controller
                 File::size($compressedPath) <= 0
             ) {
                 throw new \RuntimeException(
-                    'Ghostscript did not create a valid compressed PDF.'
+                    'Ghostscript completed but did not create a valid PDF.'
                 );
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Compare file sizes
+            | Compare sizes
             |--------------------------------------------------------------------------
             */
 
-            $originalSize = File::size($originalPath);
-            $compressedSize = File::size($compressedPath);
+            $originalSize = File::size(
+                $originalPath
+            );
+
+            $compressedSize = File::size(
+                $compressedPath
+            );
 
             /*
             |--------------------------------------------------------------------------
-            | If compression did not reduce the file
+            | Download filename
+            |--------------------------------------------------------------------------
+            */
+
+            $downloadName =
+                pathinfo(
+                    $uploadedFile->getClientOriginalName(),
+                    PATHINFO_FILENAME
+                ) .
+                '-compressed.pdf';
+
+            /*
+            |--------------------------------------------------------------------------
+            | If compression did not reduce file size
             |--------------------------------------------------------------------------
             |
-            | Very important:
-            |
-            | Sometimes a PDF is already optimized.
-            | Ghostscript can then create a file that is the same size
-            | or even larger.
-            |
-            | In that situation we return the original PDF instead.
-            |
+            | Return original instead of returning a bigger PDF.
             */
 
             if ($compressedSize >= $originalSize) {
 
-                $downloadName = pathinfo(
-                    $uploadedFile->getClientOriginalName(),
-                    PATHINFO_FILENAME
-                ) . '-compressed.pdf';
+                File::delete($compressedPath);
 
-                /*
-                |--------------------------------------------------------------------------
-                | Clean compressed temporary file
-                |--------------------------------------------------------------------------
-                */
-
-                if (File::exists($compressedPath)) {
-                    File::delete($compressedPath);
-                }
-
-                return response()->download(
-                    $originalPath,
-                    $downloadName,
-                    [
-                        'Content-Type' => 'application/pdf',
-                    ]
-                )->deleteFileAfterSend(true);
+                return response()
+                    ->download(
+                        $originalPath,
+                        $downloadName,
+                        [
+                            'Content-Type' =>
+                                'application/pdf',
+                        ]
+                    )
+                    ->deleteFileAfterSend(true);
             }
 
             /*
             |--------------------------------------------------------------------------
-            | Calculate compression percentage
+            | Compression percentage
             |--------------------------------------------------------------------------
             */
 
-            $savedBytes = $originalSize - $compressedSize;
+            $compressionPercentage = round(
+                (
+                    ($originalSize - $compressedSize)
+                    / $originalSize
+                ) * 100,
+                2
+            );
 
-            $compressionPercentage = $originalSize > 0
-                ? round(
-                    ($savedBytes / $originalSize) * 100,
-                    2
-                )
-                : 0;
+            /*
+            |--------------------------------------------------------------------------
+            | Remove original before returning compressed file
+            |--------------------------------------------------------------------------
+            */
+
+            File::delete($originalPath);
 
             /*
             |--------------------------------------------------------------------------
@@ -325,46 +351,31 @@ class CompressPdfController extends Controller
             |--------------------------------------------------------------------------
             */
 
-            $downloadName = pathinfo(
-                $uploadedFile->getClientOriginalName(),
-                PATHINFO_FILENAME
-            ) . '-compressed.pdf';
+            return response()
+                ->download(
+                    $compressedPath,
+                    $downloadName,
+                    [
+                        'Content-Type' =>
+                            'application/pdf',
 
-            /*
-            |--------------------------------------------------------------------------
-            | Delete original after response
-            |--------------------------------------------------------------------------
-            |
-            | We don't need to keep the uploaded PDF after processing.
-            |
-            */
+                        'X-Original-Size' =>
+                            $originalSize,
 
-            if (File::exists($originalPath)) {
-                File::delete($originalPath);
-            }
+                        'X-Compressed-Size' =>
+                            $compressedSize,
 
-            /*
-            |--------------------------------------------------------------------------
-            | Return compressed PDF
-            |--------------------------------------------------------------------------
-            */
-
-            return response()->download(
-                $compressedPath,
-                $downloadName,
-                [
-                    'Content-Type' => 'application/pdf',
-                    'X-Original-Size' => $originalSize,
-                    'X-Compressed-Size' => $compressedSize,
-                    'X-Compression-Percent' => $compressionPercentage,
-                ]
-            )->deleteFileAfterSend(true);
+                        'X-Compression-Percent' =>
+                            $compressionPercentage,
+                    ]
+                )
+                ->deleteFileAfterSend(true);
 
         } catch (\Throwable $e) {
 
             /*
             |--------------------------------------------------------------------------
-            | Cleanup files if something goes wrong
+            | Cleanup
             |--------------------------------------------------------------------------
             */
 
@@ -378,7 +389,7 @@ class CompressPdfController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Return user-friendly error
+            | Return error to page
             |--------------------------------------------------------------------------
             */
 
@@ -386,8 +397,24 @@ class CompressPdfController extends Controller
                 ->withInput()
                 ->with(
                     'error',
-                    'PDF compression failed: ' . $e->getMessage()
+                    'PDF compression failed: ' .
+                    $e->getMessage()
                 );
+        }
+    }
+
+    /**
+     * Create directory if it does not exist.
+     */
+    private function ensureDirectory(
+        string $directory
+    ): void {
+        if (!File::exists($directory)) {
+            File::makeDirectory(
+                $directory,
+                0755,
+                true
+            );
         }
     }
 
@@ -398,7 +425,71 @@ class CompressPdfController extends Controller
     {
         /*
         |--------------------------------------------------------------------------
-        | Railway / Linux
+        | Windows
+        |--------------------------------------------------------------------------
+        */
+
+        if (PHP_OS_FAMILY === 'Windows') {
+
+            $windowsPaths = [
+                'C:\\Program Files\\gs\\gs10.07.1\\bin\\gswin64c.exe',
+                'C:\\Program Files\\gs\\bin\\gswin64c.exe',
+                'C:\\Program Files\\gs\\gs10.07.1\\bin\\gswin32c.exe',
+                'C:\\Program Files\\gs\\bin\\gswin32c.exe',
+            ];
+
+            foreach ($windowsPaths as $path) {
+
+                if (is_file($path)) {
+                    return $path;
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Windows PATH
+            |--------------------------------------------------------------------------
+            */
+
+            $process = new Process([
+                'where.exe',
+                'gswin64c.exe',
+            ]);
+
+            $process->setTimeout(10);
+
+            $process->run();
+
+            if ($process->isSuccessful()) {
+
+                $output = trim(
+                    $process->getOutput()
+                );
+
+                if ($output !== '') {
+
+                    $firstPath = trim(
+                        strtok(
+                            $output,
+                            PHP_EOL
+                        )
+                    );
+
+                    if (
+                        $firstPath !== '' &&
+                        is_file($firstPath)
+                    ) {
+                        return $firstPath;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Linux / Railway
         |--------------------------------------------------------------------------
         */
 
@@ -409,87 +500,41 @@ class CompressPdfController extends Controller
         ];
 
         foreach ($linuxPaths as $path) {
-            if (is_file($path) && is_executable($path)) {
+
+            if (
+                is_file($path) &&
+                is_executable($path)
+            ) {
                 return $path;
             }
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Windows
+        | Linux PATH
         |--------------------------------------------------------------------------
         */
 
-        $windowsPaths = [
-            'C:\\Program Files\\gs\\bin\\gswin64c.exe',
-            'C:\\Program Files\\gs\\bin\\gswin32c.exe',
-        ];
+        $process = new Process([
+            'which',
+            'gs',
+        ]);
 
-        foreach ($windowsPaths as $path) {
-            if (is_file($path)) {
+        $process->setTimeout(10);
+
+        $process->run();
+
+        if ($process->isSuccessful()) {
+
+            $path = trim(
+                $process->getOutput()
+            );
+
+            if (
+                $path !== '' &&
+                is_file($path)
+            ) {
                 return $path;
-            }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Try PATH
-        |--------------------------------------------------------------------------
-        */
-
-        if (PHP_OS_FAMILY === 'Windows') {
-
-            $process = new Process([
-                'where',
-                'gswin64c',
-            ]);
-
-            $process->run();
-
-            if ($process->isSuccessful()) {
-                $path = trim(
-                    $process->getOutput()
-                );
-
-                if ($path !== '') {
-                    return strtok($path, PHP_EOL);
-                }
-            }
-
-            $process = new Process([
-                'where',
-                'gs',
-            ]);
-
-            $process->run();
-
-            if ($process->isSuccessful()) {
-                $path = trim(
-                    $process->getOutput()
-                );
-
-                if ($path !== '') {
-                    return strtok($path, PHP_EOL);
-                }
-            }
-
-        } else {
-
-            $process = new Process([
-                'which',
-                'gs',
-            ]);
-
-            $process->run();
-
-            if ($process->isSuccessful()) {
-                $path = trim(
-                    $process->getOutput()
-                );
-
-                if ($path !== '') {
-                    return $path;
-                }
             }
         }
 

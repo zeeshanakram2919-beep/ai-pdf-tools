@@ -5,6 +5,17 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use setasign\Fpdi\Fpdi;
 
+/*
+|--------------------------------------------------------------------------
+| Load FPDF required by FPDI
+|--------------------------------------------------------------------------
+|
+| Your current project has FPDI installed, but setasign/fpdf is not
+| currently installed as a Composer package. Therefore we temporarily
+| load the FPDF copy bundled with FPDI.
+|
+*/
+
 $fpdfPath = base_path('vendor/setasign/fpdi/fpdf.php');
 
 if (!file_exists($fpdfPath)) {
@@ -15,13 +26,20 @@ if (!file_exists($fpdfPath)) {
 
 require_once $fpdfPath;
 
+
 class WatermarkPdfController extends Controller
 {
+    /**
+     * Show watermark page
+     */
     public function index()
-{
-    return view('watermark-pdf');
-}
+    {
+        return view('watermark-pdf');
+    }
 
+    /**
+     * Add watermark to PDF
+     */
     public function watermark(Request $request)
     {
         $request->validate([
@@ -33,47 +51,140 @@ class WatermarkPdfController extends Controller
         $outputPath = null;
 
         try {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Uploaded PDF
+            |--------------------------------------------------------------------------
+            */
+
             $file = $request->file('pdf');
 
             $inputPath = $file->getRealPath();
 
             if (!$inputPath || !file_exists($inputPath)) {
-                throw new \Exception('Uploaded PDF could not be found.');
+                throw new \RuntimeException(
+                    'Uploaded PDF could not be found.'
+                );
             }
 
-            $watermarkText = trim($request->input('watermark'));
+            /*
+            |--------------------------------------------------------------------------
+            | Watermark text
+            |--------------------------------------------------------------------------
+            */
+
+            $watermarkText = trim(
+                $request->input('watermark')
+            );
 
             if ($watermarkText === '') {
-                throw new \Exception('Watermark text cannot be empty.');
+                throw new \RuntimeException(
+                    'Watermark text cannot be empty.'
+                );
             }
 
-            $fontSize = (int) $request->input('font_size', 30);
+            /*
+            |--------------------------------------------------------------------------
+            | Font size
+            |--------------------------------------------------------------------------
+            */
+
+            $fontSize = (int) $request->input(
+                'font_size',
+                30
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create FPDI
+            |--------------------------------------------------------------------------
+            */
 
             $pdf = new Fpdi();
 
             $pdf->SetAutoPageBreak(false);
 
-            $pageCount = $pdf->setSourceFile($inputPath);
+            /*
+            |--------------------------------------------------------------------------
+            | Read source PDF
+            |--------------------------------------------------------------------------
+            */
+
+            $pageCount = $pdf->setSourceFile(
+                $inputPath
+            );
 
             if ($pageCount < 1) {
-                throw new \Exception('PDF does not contain any pages.');
+                throw new \RuntimeException(
+                    'PDF does not contain any pages.'
+                );
             }
 
-            for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
+            /*
+            |--------------------------------------------------------------------------
+            | Process every page
+            |--------------------------------------------------------------------------
+            */
 
-                $templateId = $pdf->importPage($pageNumber);
+            for (
+                $pageNumber = 1;
+                $pageNumber <= $pageCount;
+                $pageNumber++
+            ) {
 
-                $size = $pdf->getTemplateSize($templateId);
+                /*
+                |--------------------------------------------------------------------------
+                | Import page
+                |--------------------------------------------------------------------------
+                */
+
+                $templateId = $pdf->importPage(
+                    $pageNumber
+                );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Get original page size
+                |--------------------------------------------------------------------------
+                */
+
+                $size = $pdf->getTemplateSize(
+                    $templateId
+                );
 
                 $width = $size['width'];
                 $height = $size['height'];
 
-                $orientation = $width > $height ? 'L' : 'P';
+                /*
+                |--------------------------------------------------------------------------
+                | Page orientation
+                |--------------------------------------------------------------------------
+                */
+
+                $orientation = $width > $height
+                    ? 'L'
+                    : 'P';
+
+                /*
+                |--------------------------------------------------------------------------
+                | Add page with original dimensions
+                |--------------------------------------------------------------------------
+                */
 
                 $pdf->AddPage(
                     $orientation,
-                    [$width, $height]
+                    [
+                        $width,
+                        $height,
+                    ]
                 );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Place original page
+                |--------------------------------------------------------------------------
+                */
 
                 $pdf->useTemplate(
                     $templateId,
@@ -84,8 +195,11 @@ class WatermarkPdfController extends Controller
                 );
 
                 /*
-                 * Watermark font
-                 */
+                |--------------------------------------------------------------------------
+                | Watermark font
+                |--------------------------------------------------------------------------
+                */
+
                 $pdf->SetFont(
                     'Helvetica',
                     'B',
@@ -93,8 +207,11 @@ class WatermarkPdfController extends Controller
                 );
 
                 /*
-                 * Light grey watermark
-                 */
+                |--------------------------------------------------------------------------
+                | Watermark colour
+                |--------------------------------------------------------------------------
+                */
+
                 $pdf->SetTextColor(
                     210,
                     210,
@@ -102,19 +219,30 @@ class WatermarkPdfController extends Controller
                 );
 
                 /*
-                 * Calculate text position
-                 */
+                |--------------------------------------------------------------------------
+                | Calculate watermark position
+                |--------------------------------------------------------------------------
+                */
+
                 $textWidth = $pdf->GetStringWidth(
                     $watermarkText
                 );
 
                 $x = ($width - $textWidth) / 2;
-                $y = ($height / 2) - ($fontSize / 3);
+
+                $y = ($height / 2)
+                    - ($fontSize / 3);
 
                 /*
-                 * Write watermark
-                 */
-                $pdf->SetXY($x, $y);
+                |--------------------------------------------------------------------------
+                | Write watermark
+                |--------------------------------------------------------------------------
+                */
+
+                $pdf->SetXY(
+                    $x,
+                    $y
+                );
 
                 $pdf->Cell(
                     $textWidth,
@@ -126,10 +254,22 @@ class WatermarkPdfController extends Controller
                 );
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Output filename
+            |--------------------------------------------------------------------------
+            */
+
             $fileName =
                 'watermarked-pdf-' .
                 date('Ymd-His') .
                 '.pdf';
+
+            /*
+            |--------------------------------------------------------------------------
+            | Storage directory
+            |--------------------------------------------------------------------------
+            */
 
             $storagePath = storage_path('app');
 
@@ -141,33 +281,66 @@ class WatermarkPdfController extends Controller
                 );
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Output path
+            |--------------------------------------------------------------------------
+            */
+
             $outputPath =
                 $storagePath .
                 DIRECTORY_SEPARATOR .
                 $fileName;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Save PDF
+            |--------------------------------------------------------------------------
+            */
 
             $pdf->Output(
                 $outputPath,
                 'F'
             );
 
+            /*
+            |--------------------------------------------------------------------------
+            | Verify output
+            |--------------------------------------------------------------------------
+            */
+
             if (
                 !file_exists($outputPath) ||
                 filesize($outputPath) <= 0
             ) {
-                throw new \Exception(
+                throw new \RuntimeException(
                     'Watermarked PDF could not be created.'
                 );
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Download
+            |--------------------------------------------------------------------------
+            */
+
             return response()
                 ->download(
                     $outputPath,
-                    $fileName
+                    $fileName,
+                    [
+                        'Content-Type' => 'application/pdf',
+                    ]
                 )
                 ->deleteFileAfterSend(true);
 
         } catch (\Throwable $e) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Cleanup
+            |--------------------------------------------------------------------------
+            */
 
             if (
                 $outputPath &&
@@ -176,11 +349,19 @@ class WatermarkPdfController extends Controller
                 @unlink($outputPath);
             }
 
-            return back()->withErrors([
-                'pdf' =>
-                    'PDF watermark failed: ' .
-                    $e->getMessage()
-            ]);
+            /*
+            |--------------------------------------------------------------------------
+            | Error
+            |--------------------------------------------------------------------------
+            */
+
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'pdf' =>
+                        'PDF watermark failed: ' .
+                        $e->getMessage(),
+                ]);
         }
     }
 }

@@ -27,15 +27,7 @@ class RotatePdfController extends Controller
             /*
              * Load FPDF before FPDI
              */
-            require_once app_path('Libraries/FPDF/fpdf.php');
-
-            if (!class_exists('FPDF')) {
-                throw new \Exception('FPDF library not found.');
-            }
-
-            if (!class_exists(Fpdi::class)) {
-                throw new \Exception('FPDI library not found.');
-            }
+            
 
             $pdf = new Fpdi();
 
